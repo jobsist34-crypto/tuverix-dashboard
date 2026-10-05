@@ -1,28 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import {
-  ShieldCheck,
-  Building2,
-  AlertTriangle,
-  Gauge,
-  Search,
-  TrendingUp,
-  TrendingDown,
-  CircleDot,
-  Bell,
-  Settings,
-  ChevronLeft,
-  FileBarChart,
-  Users,
-  LayoutDashboard,
-  ClipboardCheck,
-  Camera,
-  Smartphone,
-  Monitor,
-  FileDown,
-} from 'lucide-react';
-import { supabase, type ControlPoint } from '@/lib/supabase';
+import { useEffect, useState, useCallback } from 'react';
+import { ShieldCheck, Building2, TriangleAlert as AlertTriangle, Gauge, Search, TrendingUp, TrendingDown, CircleDot, Bell, Settings, ChevronLeft, ChartBar as FileBarChart, Users, LayoutDashboard, ClipboardCheck, Camera, Smartphone, Monitor, FileDown, Cpu, Zap } from 'lucide-react';
+import { supabase, isMockMode, mockControlPoints, type ControlPoint } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -38,9 +18,12 @@ import {
 } from '@/components/ui/table';
 import { EvidenceFeed } from '@/components/evidence-feed';
 import { MobileFieldInterface } from '@/components/mobile-field-interface';
+import { AIAlertModal, type AIAlert } from '@/components/ai-alert-modal';
+import { AlertsView } from '@/components/alerts-view';
 import { generateAuditReport } from '@/lib/report';
+import { toast } from 'sonner';
 
-type ViewKey = 'dashboard' | 'evidence';
+type ViewKey = 'dashboard' | 'evidence' | 'alerts';
 type AppMode = 'desktop' | 'mobile';
 
 const severityStyles: Record<string, string> = {
@@ -49,6 +32,9 @@ const severityStyles: Record<string, string> = {
   'متوسط': 'bg-accent/10 text-accent border-accent/20',
   'منخفض': 'bg-success/10 text-success border-success/20',
 };
+
+const aiSnapshotUrl =
+  'https://images.pexels.com/photos/12203611/pexels-photo-12203611.jpeg?auto=compress&cs=tinysrgb&h=650&w=940';
 
 function formatSAR(value: number) {
   return new Intl.NumberFormat('ar-SA', {
@@ -74,8 +60,17 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [aiAlerts, setAIAlerts] = useState<AIAlert[]>([]);
+  const [modalAlert, setModalAlert] = useState<AIAlert | null>(null);
+  const [simulating, setSimulating] = useState(false);
 
   useEffect(() => {
+    if (isMockMode) {
+      setControlPoints(mockControlPoints);
+      setLoading(false);
+      return;
+    }
+
     (async () => {
       const { data, error } = await supabase
         .from('control_points')
@@ -91,6 +86,50 @@ export default function DashboardPage() {
     })();
   }, []);
 
+  const triggerAIAlert = useCallback(() => {
+    setSimulating(true);
+
+    setTimeout(() => {
+      const newAlert: AIAlert = {
+        id: `ai-${Date.now()}`,
+        title: 'تنبيه حرج: رصد عدم الالتزام بالزي الموحد (غطاء الرأس)',
+        source: 'كاميرا منطقة التحضير (CAM-02) - فرع التخصصي',
+        metric: 'دقة الرصد: 94.8% (NVIDIA Edge AI)',
+        timestamp: 'الآن',
+        snapshotUrl: aiSnapshotUrl,
+        severity: 'حرج',
+        status: 'new',
+      };
+
+      setAIAlerts((prev) => [newAlert, ...prev]);
+      setModalAlert(newAlert);
+      setSimulating(false);
+
+      toast.error('تنبيه حرج: رصد عدم الالتزام بالزي الموحد (غطاء الرأس)', {
+        description: 'كاميرا منطقة التحضير (CAM-02) — دقة الرصد: 94.8%',
+        duration: 8000,
+        action: {
+          label: 'معاينة اللقطة',
+          onClick: () => setModalAlert(newAlert),
+        },
+      });
+    }, 1200);
+  }, []);
+
+  const handleAlertAction = useCallback(
+    (id: string, action: 'sent' | 'resolved') => {
+      setAIAlerts((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, status: action } : a))
+      );
+      if (modalAlert?.id === id) {
+        setModalAlert((prev) =>
+          prev ? { ...prev, status: action } : null
+        );
+      }
+    },
+    [modalAlert]
+  );
+
   const filtered = controlPoints.filter((cp) => {
     const q = search.trim();
     if (!q) return true;
@@ -104,6 +143,10 @@ export default function DashboardPage() {
 
   const authorities = new Set(controlPoints.map((cp) => cp.authority)).size;
   const openAlerts = controlPoints.filter((cp) => cp.status === 'open').length;
+  const newAIAlertCount = aiAlerts.filter(
+    (a) => a.status === 'new'
+  ).length;
+  const totalAlertBadge = openAlerts + newAIAlertCount;
 
   const stats: StatCard[] = [
     {
@@ -133,7 +176,7 @@ export default function DashboardPage() {
     {
       id: 'alerts',
       label: 'التنبيهات المفتوحة',
-      value: String(openAlerts),
+      value: String(totalAlertBadge),
       icon: AlertTriangle,
       trend: { value: '-3 منذ الأسبوع الماضي', up: false },
       accent: 'text-destructive bg-destructive/10',
@@ -143,6 +186,7 @@ export default function DashboardPage() {
   const navItems: { key: ViewKey; icon: typeof LayoutDashboard; label: string; badge?: number }[] = [
     { key: 'dashboard', icon: LayoutDashboard, label: 'لوحة التحكم' },
     { key: 'evidence', icon: Camera, label: 'سجل الأدلة والتفتيش' },
+    { key: 'alerts', icon: AlertTriangle, label: 'التنبيهات', badge: totalAlertBadge },
   ];
 
   return (
@@ -177,6 +221,31 @@ export default function DashboardPage() {
                 (Pilot Active)
               </span>
             </div>
+
+            {/* AI Alert Simulator Button */}
+            <Button
+              variant="default"
+              size="sm"
+              className={cn(
+                'gap-1.5 rounded-lg border-destructive/20 bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground',
+                newAIAlertCount > 0 && 'animate-pulse'
+              )}
+              onClick={triggerAIAlert}
+              disabled={simulating}
+            >
+              {simulating ? (
+                <>
+                  <Cpu className="h-4 w-4 animate-spin" />
+                  <span className="hidden sm:inline">جاري التحليل...</span>
+                </>
+              ) : (
+                <>
+                  <Zap className="h-4 w-4" />
+                  <span className="hidden sm:inline">محاكاة تنبيه الذكاء الاصطناعي</span>
+                  <span className="sm:hidden">محاكاة AI</span>
+                </>
+              )}
+            </Button>
 
             <Button
               variant={appMode === 'mobile' ? 'default' : 'outline'}
@@ -217,8 +286,13 @@ export default function DashboardPage() {
               <span className="hidden md:inline">تصدير PDF</span>
             </Button>
 
-            <Button variant="ghost" size="icon" className="rounded-lg">
+            <Button variant="ghost" size="icon" className="rounded-lg relative">
               <Bell className="h-5 w-5" />
+              {newAIAlertCount > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-destructive-foreground">
+                  {newAIAlertCount}
+                </span>
+              )}
             </Button>
             <Button variant="ghost" size="icon" className="rounded-lg">
               <Settings className="h-5 w-5" />
@@ -240,21 +314,43 @@ export default function DashboardPage() {
                 icon={item.icon}
                 label={item.label}
                 active={view === item.key}
+                badge={item.badge}
                 onClick={() => setView(item.key)}
               />
             ))}
             <div className="my-2 border-t border-border/40" />
             <NavItem icon={Building2} label="الجهات التنظيمية" />
             <NavItem icon={ClipboardCheck} label="نقاط الرقابة" />
-            <NavItem icon={AlertTriangle} label="التنبيهات" badge={openAlerts} />
             <NavItem icon={FileBarChart} label="التقارير" />
             <NavItem icon={Users} label="المستخدمون" />
+
+            {/* AI status card */}
+            <div className="mt-4 rounded-lg border border-primary/20 bg-primary/5 p-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+                  <Cpu className="h-4 w-4 text-primary" />
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-primary">
+                    Edge AI Active
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    NVIDIA Jetson — CAM-02
+                  </p>
+                </div>
+              </div>
+            </div>
           </nav>
         </aside>
 
         {/* Main */}
         <main className="min-w-0 flex-1 space-y-6">
-          {view === 'evidence' ? (
+          {view === 'alerts' ? (
+            <AlertsView
+              aiAlerts={aiAlerts}
+              onViewSnapshot={(alert) => setModalAlert(alert)}
+            />
+          ) : view === 'evidence' ? (
             <>
               <div className="flex flex-col gap-1 animate-fade-in-up">
                 <h2 className="text-2xl font-bold tracking-tight">
@@ -458,6 +554,14 @@ export default function DashboardPage() {
 
       {appMode === 'mobile' && (
         <MobileFieldInterface onExit={() => setAppMode('desktop')} />
+      )}
+
+      {modalAlert && (
+        <AIAlertModal
+          alert={modalAlert}
+          onClose={() => setModalAlert(null)}
+          onAction={handleAlertAction}
+        />
       )}
     </div>
   );

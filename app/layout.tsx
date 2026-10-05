@@ -1,6 +1,7 @@
 import './globals.css';
 import type { Metadata } from 'next';
 import { Cairo } from 'next/font/google';
+import { Toaster } from '@/components/ui/sonner';
 
 const cairo = Cairo({
   subsets: ['arabic', 'latin'],
@@ -26,6 +27,7 @@ export default function RootLayout({
     <html lang="ar" dir="rtl" suppressHydrationWarning>
       <body className={cairo.className} suppressHydrationWarning>
         {children}
+        <Toaster position="top-center" dir="rtl" />
       </body>
     </html>
   );

@@ -1,19 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import {
-  Check,
-  X,
-  Clock,
-  MapPin,
-  Tag,
-  User,
-  Camera,
-  AlertTriangle,
-  FileCheck,
-  ImageOff,
-} from 'lucide-react';
-import { supabase, type InspectionEvidence, type EvidenceStatus } from '@/lib/supabase';
+import { Check, X, Clock, MapPin, Tag, User, Camera, TriangleAlert as AlertTriangle, FileCheck, ImageOff } from 'lucide-react';
+import { supabase, isMockMode, mockEvidence, type InspectionEvidence, type EvidenceStatus } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -59,6 +48,13 @@ export function EvidenceFeed() {
 
   const fetchEvidence = useCallback(async () => {
     setLoading(true);
+
+    if (isMockMode) {
+      setEvidence(mockEvidence);
+      setLoading(false);
+      return;
+    }
+
     const { data, error } = await supabase
       .from('inspection_evidence')
       .select('*')
@@ -79,37 +75,47 @@ export function EvidenceFeed() {
   const updateStatus = async (id: string, status: EvidenceStatus) => {
     setUpdating((prev) => new Set(prev).add(id));
     const reviewer = 'مدير العمليات';
-    const { error } = await supabase
-      .from('inspection_evidence')
-      .update({
-        status,
-        reviewed_by: reviewer,
-        reviewed_at: new Date().toISOString(),
-        manager_note:
-          status === 'approved'
-            ? 'تم اعتماد الدليل'
-            : 'تم رفض الدليل وتسجيل مخالفة',
-      })
-      .eq('id', id);
 
-    if (!error) {
-      setEvidence((prev) =>
-        prev.map((e) =>
-          e.id === id
-            ? {
-                ...e,
-                status,
-                reviewed_by: reviewer,
-                reviewed_at: new Date().toISOString(),
-                manager_note:
-                  status === 'approved'
-                    ? 'تم اعتماد الدليل'
-                    : 'تم رفض الدليل وتسجيل مخالفة',
-              }
-            : e
-        )
-      );
+    if (!isMockMode) {
+      const { error } = await supabase
+        .from('inspection_evidence')
+        .update({
+          status,
+          reviewed_by: reviewer,
+          reviewed_at: new Date().toISOString(),
+          manager_note:
+            status === 'approved'
+              ? 'تم اعتماد الدليل'
+              : 'تم رفض الدليل وتسجيل مخالفة',
+        })
+        .eq('id', id);
+
+      if (error) {
+        setUpdating((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+        return;
+      }
     }
+
+    setEvidence((prev) =>
+      prev.map((e) =>
+        e.id === id
+          ? {
+              ...e,
+              status,
+              reviewed_by: reviewer,
+              reviewed_at: new Date().toISOString(),
+              manager_note:
+                status === 'approved'
+                  ? 'تم اعتماد الدليل'
+                  : 'تم رفض الدليل وتسجيل مخالفة',
+            }
+          : e
+      )
+    );
     setUpdating((prev) => {
       const next = new Set(prev);
       next.delete(id);

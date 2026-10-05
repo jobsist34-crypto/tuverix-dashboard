@@ -1,24 +1,8 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import {
-  ShieldCheck,
-  MapPin,
-  User,
-  Camera,
-  Check,
-  Clock,
-  AlertTriangle,
-  ListChecks,
-  History,
-  Bell,
-  X,
-  Upload,
-  Thermometer,
-  ImageOff,
-  ArrowRight,
-} from 'lucide-react';
-import { supabase, type InspectionEvidence } from '@/lib/supabase';
+import { ShieldCheck, MapPin, User, Camera, Check, Clock, TriangleAlert as AlertTriangle, ListChecks, History, Bell, X, Upload, Thermometer, ImageOff, ArrowRight } from 'lucide-react';
+import { supabase, isMockMode, mockEvidence, type InspectionEvidence } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -92,7 +76,7 @@ const initialTasks: DailyTask[] = [
   },
 ];
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
 
 export function MobileFieldInterface({
   onExit,
@@ -107,6 +91,13 @@ export function MobileFieldInterface({
 
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
+
+    if (isMockMode) {
+      setHistory(mockEvidence);
+      setHistoryLoading(false);
+      return;
+    }
+
     const { data } = await supabase
       .from('inspection_evidence')
       .select('*')
@@ -552,6 +543,29 @@ function EvidenceCaptureModal({
     setSubmitError(null);
 
     try {
+      if (isMockMode) {
+        const newEvidence: InspectionEvidence = {
+          id: `mock-ev-${Date.now()}`,
+          control_point_id: task.control_id,
+          branch_name: branchName,
+          image_url: previewUrl || '',
+          storage_path: null,
+          responsible_role: role.toUpperCase().includes('BARISTA')
+            ? 'BARISTA'
+            : 'SHIFT_MANAGER',
+          captured_at: new Date().toISOString(),
+          status: 'pending',
+          manager_note: null,
+          reviewed_by: null,
+          reviewed_at: null,
+          metric_value: metric ? parseFloat(metric) : null,
+          created_at: new Date().toISOString(),
+        };
+        mockEvidence.unshift(newEvidence);
+        onSubmitted();
+        return;
+      }
+
       const ext = selectedFile.name.split('.').pop()?.toLowerCase() || 'jpg';
       const fileName = `${task.control_id}-${Date.now()}.${ext}`;
       const filePath = fileName;
@@ -566,12 +580,9 @@ function EvidenceCaptureModal({
       let imageUrl: string;
 
       if (uploadError) {
-        // Fallback: use object URL won't persist, so use a placeholder approach
-        // If upload fails, still insert the record with the public URL attempt
         imageUrl = `${supabaseUrl}/storage/v1/object/public/inspection-evidences/${filePath}`;
       }
 
-      // Get public URL
       const { data: urlData } = supabase.storage
         .from('inspection-evidences')
         .getPublicUrl(filePath);
